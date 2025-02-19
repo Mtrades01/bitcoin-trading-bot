@@ -1,98 +1,73 @@
-import requests
-import schedule
-import time
-import numpy as np
 import os
-from telegram import Bot, Update
-from telegram.ext import Updater, CommandHandler, CallbackContext
+import requests
+import json
+from telegram import Update
+from telegram.ext import Application, CommandHandler, CallbackContext
+from datetime import datetime
 
-# Load secrets from GitHub Actions environment variables
+# Get bot token from environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_IDS_FILE = "chat_ids.json"
 
-# Store users who start the bot
-USER_CHAT_IDS = set()
+# Function to load chat IDs from file
+def load_chat_ids():
+    if os.path.exists(CHAT_IDS_FILE):
+        with open(CHAT_IDS_FILE, "r") as file:
+            return json.load(file)
+    return []
 
-def start(update: Update, context: CallbackContext):
-    """Handles /start command and saves the user chat ID."""
-    chat_id = update.effective_chat.id
-    USER_CHAT_IDS.add(chat_id)
-    update.message.reply_text("✅ You are now subscribed to Bitcoin updates!")
+# Function to save chat IDs
+def save_chat_id(chat_id):
+    chat_ids = load_chat_ids()
+    if chat_id not in chat_ids:
+        chat_ids.append(chat_id)
+        with open(CHAT_IDS_FILE, "w") as file:
+            json.dump(chat_ids, file)
 
+# Command to start the bot
+async def start(update: Update, context: CallbackContext):
+    chat_id = update.message.chat_id
+    save_chat_id(chat_id)
+    await update.message.reply_text("Hello! Your Bitcoin bot is active. You will receive updates.")
+
+# Function to fetch Bitcoin price and support/resistance levels
 def get_bitcoin_data():
-    """Fetch historical Bitcoin price data"""
-    url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
-    params = {"vs_currency": "usd", "days": "7", "interval": "hourly"}
-    
-    response = requests.get(url, params=params)
-    data = response.json()
+    url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        price = data["bitcoin"]["usd"]
+        
+        # Example support/resistance levels (you can update this with real calculations)
+        support = round(price * 0.95, 2)
+        resistance = round(price * 1.05, 2)
+        
+        return f"📊 Bitcoin Update ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}):\n\n💰 Price: ${price}\n📉 Support: ${support}\n📈 Resistance: ${resistance}"
+    return "Failed to fetch Bitcoin data."
 
-    if "prices" not in data:
-        print("Error fetching Bitcoin data:", data)
-        return []
+# Function to send Bitcoin updates
+async def send_bitcoin_update(context: CallbackContext):
+    message = get_bitcoin_data()
+    chat_ids = load_chat_ids()
+    for chat_id in chat_ids:
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=message)
+        except Exception as e:
+            print(f"Failed to send message to {chat_id}: {e}")
 
-    return [entry[1] for entry in data["prices"]][-100:]
+# Main function to run the bot
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
 
-def analyze_price_action(prices):
-    """Analyze price action for key insights"""
-    if not prices:
-        return None
+    # Add command handlers
+    app.add_handler(CommandHandler("start", start))
 
-    current_price = prices[-1]
-    recent_high = max(prices[-50:])
-    recent_low = min(prices[-50:])
-    volatility = round(np.std(prices[-50:]), 2)
+    # Schedule Bitcoin updates every hour
+    job_queue = app.job_queue
+    job_queue.run_repeating(send_bitcoin_update, interval=3600, first=10)
 
-    trend = (
-        "📈 *Uptrend* - Buyers in control" if current_price > np.mean(prices[-50:])
-        else "📉 *Downtrend* - Sellers in control"
-    )
+    print("Bot is running...")
+    app.run_polling()
 
-    return {
-        "current_price": round(current_price, 2),
-        "trend": trend,
-        "support": round(recent_low, 2),
-        "resistance": round(recent_high, 2),
-        "volatility": volatility
-    }
-
-def send_message(text):
-    """Send a message to all users"""
-    bot = Bot(token=BOT_TOKEN)
-    for chat_id in USER_CHAT_IDS:
-        bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown")
-
-def send_bitcoin_update():
-    """Send the Bitcoin update"""
-    prices = get_bitcoin_data()
-    insights = analyze_price_action(prices)
-
-    if not insights:
-        print("Skipping message due to missing data.")
-        return
-
-    message = (
-        f"📊 *Bitcoin Daily Price Action* 📊\n\n"
-        f"💰 *Current Price:* ${insights['current_price']}\n"
-        f"{insights['trend']}\n"
-        f"🟢 *Support:* ${insights['support']}\n"
-        f"🔴 *Resistance:* ${insights['resistance']}\n"
-        f"📊 *Volatility:* {insights['volatility']}\n\n"
-        f"⚡️ *Trading Tip:* Look for price action signals around key levels!"
-    )
-
-    send_message(message)
-
-# Set up the bot
-updater = Updater(token=BOT_TOKEN, use_context=True)
-dispatcher = updater.dispatcher
-dispatcher.add_handler(CommandHandler("start", start))
-
-# Schedule daily update
-schedule.every().day.at("08:00").do(send_bitcoin_update)
-
-# Start the bot
-updater.start_polling()
-
-while True:
-    schedule.run_pending()
-    time.sleep(60)
+if __name__ == "__main__":
+    main()
