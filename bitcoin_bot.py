@@ -57,17 +57,19 @@ async def send_bitcoin_update(context: CallbackContext):
 
 # Main function to run the bot
 def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+    # Ensure JobQueue is enabled
+    app = Application.builder().token(BOT_TOKEN).post_init(init_job_queue).build()
 
     # Add command handlers
     app.add_handler(CommandHandler("start", start))
 
-    # Get the job queue and schedule updates
-    job_queue = app.job_queue
-    job_queue.run_repeating(send_bitcoin_update, interval=3600, first=10)
-
     print("Bot is running...")
     app.run_polling()
+
+# Function to initialize job queue
+async def init_job_queue(app: Application):
+    job_queue = app.job_queue
+    job_queue.run_repeating(send_bitcoin_update, interval=3600, first=10)
 
 if __name__ == "__main__":
     main()
