@@ -38,7 +38,7 @@ def get_bitcoin_data():
         data = response.json()
         price = data["bitcoin"]["usd"]
         
-        # Example support/resistance levels (you can update this with real calculations)
+        # Example support/resistance levels (adjust as needed)
         support = round(price * 0.95, 2)
         resistance = round(price * 1.05, 2)
         
@@ -62,7 +62,7 @@ def main():
     # Add command handlers
     app.add_handler(CommandHandler("start", start))
 
-    # Schedule Bitcoin updates every hour
+    # Get the job queue and schedule updates
     job_queue = app.job_queue
     job_queue.run_repeating(send_bitcoin_update, interval=3600, first=10)
 
