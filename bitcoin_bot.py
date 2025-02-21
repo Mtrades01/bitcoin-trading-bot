@@ -1,42 +1,37 @@
+import os
 import asyncio
 import logging
-import os
-from telegram import Update
-from telegram.ext import Application, CommandHandler, CallbackContext
+from telegram import Bot
+from telegram.ext import Application, CommandHandler
 
-# Configure logging
+# Logging setup
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", 
-    level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Get bot token from environment variable
+# Load environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
-    raise ValueError("No BOT_TOKEN found in environment variables!")
+CHAT_ID = os.getenv("CHAT_ID")
 
-# Initialize the bot application
-app = Application.builder().token(BOT_TOKEN).build()
+# Initialize Telegram Bot
+bot = Bot(token=BOT_TOKEN)
 
-# Command handler: /start
-async def start(update: Update, context: CallbackContext) -> None:
-    await update.message.reply_text("Hello! I am your Bitcoin Trading Bot.")
+async def start(update, context):
+    await update.message.reply_text("Hello! I'm your Bitcoin bot.")
 
-# Add handlers
-app.add_handler(CommandHandler("start", start))
+async def send_message(text):
+    await bot.send_message(chat_id=CHAT_ID, text=text)
 
-# Main function
 async def main():
-    logger.info("Bot is running...")
-    await app.run_polling()
+    application = Application.builder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
 
-# Fix for "RuntimeError: This event loop is already running"
-if __name__ == "__main__":
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    logger.info("Bot is running...")
     
-    loop.run_until_complete(main())
+    await application.run_polling()
+
+if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
+    loop.create_task(main())  # Run main() properly without asyncio.run()
+    loop.run_forever()  # Keep the bot running
